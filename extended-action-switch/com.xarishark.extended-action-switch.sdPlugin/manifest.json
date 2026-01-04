@@ -4,17 +4,23 @@
 	"Author": "Xarishark",
 	"Actions": [
 		{
-			"Name": "Counter",
-			"UUID": "com.xarishark.extended-action-switch.increment",
-			"Icon": "imgs/actions/counter/icon",
-			"Tooltip": "Displays a count, which increments by one on press.",
-			"PropertyInspectorPath": "ui/increment-counter.html",
+			"Name": "Extended Action Switch",
+			"UUID": "com.xarishark.extended-action-switch.action",
+			"Icon": "imgs/actions/switch/icon",
+			"Tooltip": "A toggle switch with a long-press override.",
+			"PropertyInspectorPath": "ui/extended-action-switch.html",
 			"Controllers": [
 				"Keypad"
 			],
 			"States": [
 				{
-					"Image": "imgs/actions/counter/key",
+					"Image": "imgs/actions/switch/state0",
+					"Title": "Off",
+					"TitleAlignment": "middle"
+				},
+				{
+					"Image": "imgs/actions/switch/state1",
+					"Title": "On",
 					"TitleAlignment": "middle"
 				}
 			]

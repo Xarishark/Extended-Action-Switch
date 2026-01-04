@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8" />
+    <title>Extended Action Switch Settings</title>
+    <link rel="stylesheet" href="https://sdpi-components.dev/releases/v4/sdpi-components.css">
+    <style>
+        body {
+            background-color: #2b2b2b;
+            color: #efefef;
+            font-family: 'Inter', 'Segoe UI', sans-serif;
+            font-size: 11px;
+            margin: 0;
+            padding: 0;
+        }
+
+        .sdpi-wrapper {
+            padding: 0;
+        }
+
+        .tab-container {
+            display: flex;
+            background: #202020;
+            border-bottom: 1px solid #3d3d3d;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .tab {
+            flex: 1;
+            padding: 12px 4px;
+            cursor: pointer;
+            color: #777;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s ease;
+            font-weight: 600;
+            text-align: center;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-size: 10px;
+        }
+
+        .tab:hover {
+            color: #aaa;
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .tab.active {
+            color: #00aaff;
+            border-bottom-color: #00aaff;
+            background: rgba(0, 170, 255, 0.08);
+        }
+
+        .tree-container {
+            display: none;
+            padding: 12px;
+            min-height: 120px;
+        }
+
+        .tree-container.active {
+            display: block;
+        }
+
+        .command-row {
+            background: #333;
+            padding: 8px;
+            border-radius: 6px;
+            border: 1px solid #444;
+            margin-bottom: 10px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        .command-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+        }
+
+        .command-body {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .command-row select {
+            background: #1a1a1a;
+            color: #fff;
+            border: 1px solid #444;
+            padding: 4px;
+            border-radius: 4px;
+            font-size: 11px;
+            width: 75px;
+            outline: none;
+        }
+
+        .input-wrapper {
+            flex: 1;
+            position: relative;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .command-row input {
+            background: #1a1a1a;
+            color: #fff;
+            border: 1px solid #444;
+            padding: 5px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            width: 100%;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .command-row input:focus {
+            border-color: #00aaff;
+        }
+
+        .command-row input.recording {
+            border-color: #ff5555;
+            box-shadow: 0 0 5px rgba(255, 85, 85, 0.4);
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.7;
+            }
+
+            100% {
+                opacity: 1;
+            }
+        }
+
+        .btn-browse {
+            background: #444;
+            color: #fff;
+            border: 1px solid #555;
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 10px;
+            flex-shrink: 0;
+        }
+
+        .btn-browse:hover {
+            background: #555;
+        }
+
+        .btn-add {
+            background: #00aaff;
+            color: white;
+            border: none;
+            padding: 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin: 0 12px 20px 12px;
+            font-weight: bold;
+            width: calc(100% - 24px);
+            transition: filter 0.2s;
+            box-shadow: 0 4px 6px rgba(0, 170, 255, 0.2);
+        }
+
+        .btn-add:hover {
+            filter: brightness(1.1);
+        }
+
+        .btn-del {
+            color: #666;
+            cursor: pointer;
+            font-size: 14px;
+            transition: color 0.2s;
+            margin-left: 4px;
+        }
+
+        .btn-del:hover {
+            color: #ff5555;
+        }
+
+        .empty-msg {
+            color: #555;
+            font-style: italic;
+            text-align: center;
+            margin-top: 30px;
+            font-size: 11px;
+        }
+
+        .hint {
+            font-size: 9px;
+            color: #666;
+            margin-top: 4px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="sdpi-wrapper">
+        <div class="tab-container">
+            <div class="tab active" id="tab0" onclick="showTab('tree0')">Left (On)</div>
+            <div class="tab" id="tab1" onclick="showTab('tree1')">Right (Off)</div>
+            <div class="tab" id="tabHold" onclick="showTab('treeHold')">Hold</div>
+        </div>
+
+        <div id="tree0" class="tree-container active"></div>
+        <div id="tree1" class="tree-container"></div>
+        <div id="treeHold" class="tree-container"></div>
+
+        <button class="btn-add" onclick="addCommand()">+ Add Command</button>
+    </div>
+
+    <script>
+        let currentTab = 'tree0';
+        let settings = { tree0: [], tree1: [], treeHold: [] };
+        let websocket = null;
+        let uuid = null;
+
+        // Message communication from plugin
+        window.addEventListener('message', (ev) => {
+            if (ev.data.event === 'didReceiveSettings') {
+                settings = ev.data.payload.settings;
+                syncSettings();
+                render();
+            } else if (ev.data.event === 'filePicked') {
+                const { filePath, index, tree } = ev.data.payload;
+                if (filePath) {
+                    settings[tree][index].value = filePath;
+                    saveSettings();
+                    render();
+                }
+            }
+        });
+
+        function connectElgatoStreamDeckSocket(inPort, inPropertyInspectorUUID, inRegisterEvent, inInfo, inActionInfo) {
+            uuid = inPropertyInspectorUUID;
+            websocket = new WebSocket('ws://127.0.0.1:' + inPort);
+            const actionInfo = JSON.parse(inActionInfo);
+            settings = actionInfo.payload.settings;
+            syncSettings();
+
+            websocket.onopen = () => {
+                websocket.send(JSON.stringify({ event: inRegisterEvent, uuid: inPropertyInspectorUUID }));
+                render();
+            };
+
+            websocket.onmessage = (evt) => {
+                const jsonObj = JSON.parse(evt.data);
+                if (jsonObj.event === 'sendToPropertyInspector') {
+                    const payload = jsonObj.payload;
+                    if (payload.event === 'filePicked') {
+                        const { filePath, index, tree } = payload;
+                        if (filePath) {
+                            settings[tree][index].value = filePath;
+                            saveSettings();
+                            render();
+                        }
+                    }
+                }
+            };
+
+            window.saveSettings = () => {
+                websocket.send(JSON.stringify({
+                    event: 'setSettings',
+                    context: uuid,
+                    payload: settings
+                }));
+            };
+        }
+
+        function syncSettings() {
+            settings.tree0 = settings.tree0 || [];
+            settings.tree1 = settings.tree1 || [];
+            settings.treeHold = settings.treeHold || [];
+        }
+
+        function showTab(id) {
+            currentTab = id;
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.getElementById('tab' + id.replace('tree', '')).classList.add('active');
+            document.querySelectorAll('.tree-container').forEach(c => c.classList.remove('active'));
+            document.getElementById(id).classList.add('active');
+            render();
+        }
+
+        function render() {
+            const container = document.getElementById(currentTab);
+            container.innerHTML = '';
+
+            const tree = settings[currentTab];
+            if (tree.length === 0) {
+                container.innerHTML = '<div class="empty-msg">No commands here yet.</div>';
+                return;
+            }
+
+            tree.forEach((cmd, index) => {
+                const row = document.createElement('div');
+                row.className = 'command-row';
+
+                let inputTypeHint = '';
+                if (cmd.type === 'hotkey') inputTypeHint = '<div class="hint">Click to record...</div>';
+                else if (cmd.type === 'text') inputTypeHint = '<div class="hint">Type text to simulate keyboard...</div>';
+
+                row.innerHTML = `
+                    <div class="command-header">
+                        <select onchange="updateCmd(${index}, 'type', this.value)">
+                            <option value="hotkey" ${cmd.type === 'hotkey' ? 'selected' : ''}>Hotkey</option>
+                            <option value="url" ${cmd.type === 'url' ? 'selected' : ''}>URL</option>
+                            <option value="text" ${cmd.type === 'text' ? 'selected' : ''}>Text</option>
+                            <option value="delay" ${cmd.type === 'delay' ? 'selected' : ''}>Delay</option>
+                            <option value="run" ${cmd.type === 'run' ? 'selected' : ''}>Run</option>
+                        </select>
+                        <span class="btn-del" onclick="removeCmd(${index})">×</span>
+                    </div>
+                    <div class="command-body">
+                        <div class="input-wrapper">
+                            <input type="text" 
+                                id="input-${currentTab}-${index}"
+                                value="${cmd.value || ''}" 
+                                oninput="updateCmd(${index}, 'value', this.value)" 
+                                placeholder="${getPlaceholder(cmd.type)}"
+                                ${cmd.type === 'hotkey' ? 'onfocus="startRecording(this, ' + index + ')"' : ''}
+                                ${cmd.type === 'hotkey' ? 'onblur="stopRecording(this)"' : ''}
+                            >
+                            ${cmd.type === 'run' ? `<button class="btn-browse" onclick="browseFile(${index})">Browse</button>` : ''}
+                            ${cmd.type === 'delay' ? `<span style="margin-left: 4px; color: #888; font-weight: bold; flex-shrink: 0;">ms</span>` : ''}
+                        </div>
+                    </div>
+                    ${inputTypeHint}
+                `;
+                container.appendChild(row);
+            });
+        }
+
+        function getPlaceholder(type) {
+            switch (type) {
+                case 'hotkey': return '^s, %f, {ENTER}';
+                case 'url': return 'https://...';
+                case 'text': return 'Type something...';
+                case 'delay': return 'Milliseconds (e.g. 500)';
+                case 'run': return 'Path to .exe or file';
+                default: return 'Value...';
+            }
+        }
+
+        window.addCommand = () => {
+            settings[currentTab].push({ type: 'hotkey', value: '' });
+            render();
+            saveSettings();
+        };
+
+        window.removeCmd = (index) => {
+            settings[currentTab].splice(index, 1);
+            render();
+            saveSettings();
+        };
+
+        window.updateCmd = (index, field, value) => {
+            settings[currentTab][index][field] = value;
+            saveSettings();
+            if (field === 'type') render();
+        };
+
+        window.browseFile = (index) => {
+            websocket.send(JSON.stringify({
+                event: 'sendToPlugin',
+                context: uuid,
+                action: 'com.xarishark.extended-action-switch.action',
+                payload: {
+                    event: 'browseFile',
+                    index: index,
+                    tree: currentTab
+                }
+            }));
+        };
+
+        // Hotkey Recording Logic
+        let recordingIndex = -1;
+        window.startRecording = (el, index) => {
+            el.classList.add('recording');
+            el.placeholder = 'Press keys...';
+            recordingIndex = index;
+            window.addEventListener('keydown', captureKeys);
+        };
+
+        window.stopRecording = (el) => {
+            el.classList.remove('recording');
+            el.placeholder = getPlaceholder('hotkey');
+            window.removeEventListener('keydown', captureKeys);
+            recordingIndex = -1;
+        };
+
+        function captureKeys(e) {
+            e.preventDefault();
+            let keys = [];
+            if (e.ctrlKey) keys.push('^');
+            if (e.shiftKey) keys.push('+');
+            if (e.altKey) keys.push('%');
+
+            // Map common keys to SendKeys format
+            let k = e.key.toUpperCase();
+            if (k === 'CONTROL' || k === 'SHIFT' || k === 'ALT') return; // Wait for the actual key
+
+            if (k.length > 1) {
+                // Wrap special keys in {}
+                if (k === 'BACKSPACE') k = 'BACKSPACE';
+                else if (k === ' ') k = ' '; // Space is literal
+                else k = '{' + k + '}';
+            }
+
+            keys.push(k);
+            const value = keys.join('');
+
+            const input = document.getElementById(`input-${currentTab}-${recordingIndex}`);
+            if (input) {
+                input.value = value;
+                updateCmd(recordingIndex, 'value', value);
+                input.blur(); // Stop recording after one combination
+            }
+        }
+    </script>
+</body>
+
+</html>
