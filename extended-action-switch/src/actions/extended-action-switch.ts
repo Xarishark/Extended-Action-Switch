@@ -45,14 +45,15 @@ export class ExtendedActionSwitch extends SingletonAction<SwitchSettings> {
     override async onSendToPlugin(ev: any): Promise<void> {
         if (ev.payload.event === "browseFile") {
             const filePath = await this.browseFile();
-            await ev.action.sendToPropertyInspector({
-                event: "filePicked",
-                payload: {
-                    filePath,
-                    index: ev.payload.index,
-                    tree: ev.payload.tree
+
+            if (filePath) {
+                // Update settings directly - this is more robust
+                const { index, tree, settings } = ev.payload;
+                if (settings && settings[tree] && settings[tree][index]) {
+                    settings[tree][index].value = filePath;
+                    await ev.action.setSettings(settings); // This triggers didReceiveSettings back to PI
                 }
-            });
+            }
         }
     }
 
@@ -62,17 +63,16 @@ export class ExtendedActionSwitch extends SingletonAction<SwitchSettings> {
     private async browseFile(): Promise<string> {
         const { exec } = await import("child_process");
         const isWin = process.platform === "win32";
-        const cmd = isWin
-            ? `powershell -Command "Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.OpenFileDialog; $f.Filter = 'All Files (*.*)|*.*'; if($f.ShowDialog() -eq 'OK') { $f.FileName }"`
-            : `osascript -e 'POSIX path of (choose file)'`;
+        const winCmd = `powershell -NoProfile -ExecutionPolicy Bypass -Command "Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.OpenFileDialog; $f.InitialDirectory = [System.Environment]::GetFolderPath('Desktop'); $f.Filter = 'All Files (*.*)|*.*'; if($f.ShowDialog() -eq 'OK') { Write-Output $f.FileName }"`;
+        const macCmd = `osascript -e 'POSIX path of (choose file)'`;
 
         return new Promise((resolve) => {
-            exec(cmd, (err, stdout) => {
+            exec(isWin ? winCmd : macCmd, (err, stdout) => {
                 if (err) {
-                    // It often errors if user cancels, so just resolve empty
                     resolve("");
                 } else {
-                    resolve(stdout.trim());
+                    const path = stdout.trim();
+                    resolve(path);
                 }
             });
         });
@@ -192,16 +192,31 @@ export class ExtendedActionSwitch extends SingletonAction<SwitchSettings> {
  * Simple helper to open URL or App
  */
 async function open(target: string) {
-    const { exec } = await import("child_process");
+    if (!target || target.trim() === "") return;
+
+    const { exec, spawn } = await import("child_process");
     const isWin = process.platform === "win32";
-    const start = isWin ? "start" : "open";
-    const cmd = isWin ? `start "" "${target}"` : `${start} "${target}"`;
-    return new Promise((resolve) => {
-        exec(cmd, (err) => {
-            if (err) console.error("Open failed:", err);
-            resolve();
+
+    // Check if it's a URL
+    if (target.startsWith("http://") || target.startsWith("https://") || target.startsWith("mailto:")) {
+        const start = isWin ? "start" : "open";
+        const cmd = isWin ? `start "" "${target}"` : `${start} "${target}"`;
+        return new Promise<void>((resolve) => {
+            exec(cmd, () => resolve());
         });
-    });
+    } else {
+        // For local files/apps, use spawn with detached for silent background execution
+        try {
+            const child = spawn(isWin ? "cmd.exe" : "open", isWin ? ["/c", target] : [target], {
+                detached: true,
+                stdio: "ignore",
+                windowsHide: true
+            });
+            child.unref();
+        } catch (err) {
+            console.error("Spawn failed:", err);
+        }
+    }
 }
 
 

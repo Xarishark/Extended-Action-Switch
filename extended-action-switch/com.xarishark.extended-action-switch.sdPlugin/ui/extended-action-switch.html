@@ -4,7 +4,6 @@
 <head>
     <meta charset="utf-8" />
     <title>Extended Action Switch Settings</title>
-    <link rel="stylesheet" href="https://sdpi-components.dev/releases/v4/sdpi-components.css">
     <style>
         body {
             background-color: #2b2b2b;
@@ -222,25 +221,36 @@
         let websocket = null;
         let uuid = null;
 
-        // Message communication from plugin
-        window.addEventListener('message', (ev) => {
-            if (ev.data.event === 'didReceiveSettings') {
-                settings = ev.data.payload.settings;
+        // Unify message handling from all possible channels
+        function handleMessage(event, data) {
+            if (event === 'didReceiveSettings') {
+                settings = data.settings || data;
                 syncSettings();
                 render();
-            } else if (ev.data.event === 'filePicked') {
-                const { filePath, index, tree } = ev.data.payload;
-                if (filePath) {
-                    settings[tree][index].value = filePath;
-                    saveSettings();
-                    render();
+            } else if (event === 'filePicked' || event === 'sendToPropertyInspector') {
+                const payload = data.payload || data;
+                if (payload.event === 'filePicked' || event === 'filePicked') {
+                    const target = payload.event === 'filePicked' ? payload : data;
+                    const { filePath, index, tree } = target;
+                    if (filePath && index !== undefined && tree) {
+                        settings[tree][index].value = filePath;
+                        saveSettings();
+                        render();
+                    }
                 }
+            }
+        }
+
+        window.addEventListener('message', (ev) => {
+            if (ev.data && ev.data.event) {
+                handleMessage(ev.data.event, ev.data.payload || ev.data);
             }
         });
 
         function connectElgatoStreamDeckSocket(inPort, inPropertyInspectorUUID, inRegisterEvent, inInfo, inActionInfo) {
             uuid = inPropertyInspectorUUID;
             websocket = new WebSocket('ws://127.0.0.1:' + inPort);
+
             const actionInfo = JSON.parse(inActionInfo);
             settings = actionInfo.payload.settings;
             syncSettings();
@@ -252,16 +262,8 @@
 
             websocket.onmessage = (evt) => {
                 const jsonObj = JSON.parse(evt.data);
-                if (jsonObj.event === 'sendToPropertyInspector') {
-                    const payload = jsonObj.payload;
-                    if (payload.event === 'filePicked') {
-                        const { filePath, index, tree } = payload;
-                        if (filePath) {
-                            settings[tree][index].value = filePath;
-                            saveSettings();
-                            render();
-                        }
-                    }
+                if (jsonObj.event) {
+                    handleMessage(jsonObj.event, jsonObj.payload || jsonObj);
                 }
             };
 
@@ -375,7 +377,8 @@
                 payload: {
                     event: 'browseFile',
                     index: index,
-                    tree: currentTab
+                    tree: currentTab,
+                    settings: settings // Send current settings to be updated
                 }
             }));
         };
